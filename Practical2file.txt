@@ -1,0 +1,12 @@
+#Practical 2 (due next practical): 
+Exercise in Building Tools to Analyze Sequence Data Quality
+
+Data files: seq_reads
+Contains three short read .fasta data files with sequences of various quality
+Challenge #1: DS1, DS2 are synthetic DNA data sets 
+Build two tools (R or python3) to visualize and analyze data quality:
+1. Plot DNA length v. Q, length v. number of N ambiguities, Q v. N
+2. generate a heatmap comparing the two data sets
+Challenge #2: SRR14149060 is from a breast cancer study
+https://www.ncbi.nlm.nih.gov/sra/?term=SRR14149060 
+1. Analyze read lengths: are these human reads? To what do they target?2. Generate concept for a rapid mapping of reads to the human genome to assess quality and distribution

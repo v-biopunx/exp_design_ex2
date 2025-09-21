@@ -1,0 +1,221 @@
+---
+title: "Practical Task 2"
+author: "Vasyl Lukashchuk"
+date: 09/20/2025
+date-format: long
+format:
+  html:
+    code-fold: false
+    code-tools: true
+    embed-resources: true
+    highlight-style: github
+    toc: true
+    code-line-numbers: false
+---
+
+# Challenges
+**Data files**: seq_reads   
+Contains three short read .fasta data files with sequences of various quality   
+
+**Challenge #1**: DS1, DS2 are synthetic DNA data sets. Build two tools (R or python3) to visualize and analyze data quality.   
+1. Plot DNA length v. Q, length v. number of N ambiguities, Q v. N.     
+2. Generate a heatmap comparing the two data sets.  
+
+**Challenge #2**: SRR14149060 is from a [breast cancer study](https://www.ncbi.nlm.nih.gov/sra/?term=SRR14149060).    
+1. Analyze read lengths: are these human reads? To what do they target?     
+2. Generate concept for a rapid mapping of reads to the human genome to assess quality and distribution.   
+
+# Challenge #1
+
+## Extracting data from FASTA files
+
+### Importing third_party librarties
+```{r}
+library("tidyverse")
+library("patchwork")
+```
+
+### Saving relative paths to data files
+```{r}
+DS1_path <- "./seq_reads/DS1.fasta"
+DS2_path <- "./seq_reads/DS2.fasta"
+```
+
+
+### Converting FASTA files to tibbles
+```{r}
+fasta_as_tibble <- function(path_to_fasta) {
+  # Get a list of strings representing sequences and their respective headers
+  sample_char_list <- read_file(path_to_fasta) |> 
+    str_remove("^>") |> 
+    str_replace_all("\n", "") |> 
+    str_split(">") 
+  
+  sample_char_list <- sample_char_list[[1]] # Split function returns a layered 
+  # list, so access the data in the layer 1
+  
+  # Extract values we need for analysis
+  # I used Gemini and Regex101 to write and test regular expressions
+  id <- str_extract(sample_char_list, '^\\S+') 
+  set <- str_extract(sample_char_list, '(?<=set=).*(?=\\sq)')
+  q <- str_extract(sample_char_list, '(?<=q=).*(?=\\sl)')
+  read <- str_extract(sample_char_list, '[ATGCN]*$')
+  
+  # Create a tibble with a quality column converted to numeric from char
+  resulting_tibble <- tibble(
+  ID = id,
+  Set = set,
+  Quality = as.numeric(q),
+  Seq_read = read
+)
+  
+  # Add a length column by calculating length of each read
+  resulting_tibble <- resulting_tibble |> 
+    mutate(Length = str_length(Seq_read))
+  
+  # Add a column containing a number of occurences of N in each read
+  resulting_tibble <- resulting_tibble |> 
+    mutate(N_number = str_count(Seq_read, "N"))
+  
+  return(resulting_tibble)
+}
+```
+
+```{r}
+DS1 <- fasta_as_tibble(DS1_path)
+DS2 <- fasta_as_tibble(DS2_path)
+```
+
+## Plotting the relationships between numerical variables
+
+### Adding a quality range column to datasets
+```{r}
+categorize_by_q <- function(data) {
+  # Plotting a relationship between 2 discreet variables doesn't produce 
+  # informative plots, so I decided to add a categorical data column to be
+  # represented as different fill on a histogram
+  categorized_data <- data |>
+  mutate(Qscore_range = case_when(
+    Quality <= 10 ~ "0-9",
+    Quality > 10 & Quality <= 20 ~ "10-20",
+    Quality > 20 & Quality <= 30 ~ "21-30",
+    Quality > 30 ~ "31-36"
+  ))
+  return(categorized_data)
+}
+
+DS1 <- categorize_by_q(DS1)
+DS2 <- categorize_by_q(DS2)
+```
+
+### Read length vs Qscore plots
+```{r}
+p1_len_q <- ggplot(DS1, aes(x = Length, fill = Qscore_range, color = "black")) + 
+  geom_histogram(binwidth = 10) + scale_color_brewer(palette="Paired") + 
+  labs(title = "Dataset 1")
+
+p2_len_q <- ggplot(DS2, aes(x = Length, fill = Qscore_range, color = "black")) + 
+  geom_histogram(binwidth = 10) + scale_color_brewer(palette="Paired") + 
+  labs(title = "Dataset 2")
+
+p1_len_q + p2_len_q + plot_layout(guides = "collect")
+```
+The majority of reads have quality scores between 10 and 30 for both datasets. 
+A Q-score of 10 indicates a 90 % probability of an accurate base call, whereas 
+a score of 20 represents a 99 % probability. Only a minor fraction of reads in red contain
+a relatively big number of errors.
+
+### Factorizing number of N
+
+```{r}
+# Range of N occurences isn't as broad as in case of quality scores,
+# so I factorized this variable for mapping it to fill aesthetic
+DS1$N_number_factor <- factor(DS1$N_number)
+DS2$N_number_factor <- factor(DS2$N_number)
+```
+
+### Length v. number of ambiguities (N) plots
+```{r}
+p1_len_n <- ggplot(DS1, aes(x = Length, fill = N_number_factor, color = "black")) + 
+  geom_histogram(binwidth = 10) + scale_color_brewer(palette="Paired") + 
+  labs(title = "Dataset 1")
+
+p2_len_n <- ggplot(DS2, aes(x = Length, fill = N_number_factor, color = "black")) + 
+  geom_histogram(binwidth = 10) + scale_color_brewer(palette="Paired") + 
+  labs(title = "Dataset 2") 
+
+p1_len_n + p2_len_n + plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+Number of ambiguities increases with the read length
+
+### Q vs N plots
+```{r}
+p1_q_n <- ggplot(DS1, aes(x = Quality, fill = N_number_factor, color = "black")) + 
+  geom_histogram(binwidth = 1) + scale_color_brewer(palette="Paired") + 
+  labs(title = "Dataset 1")
+
+p2_q_n <- ggplot(DS2, aes(x = Quality, fill = N_number_factor, color = "black")) + 
+  geom_histogram(binwidth = 1) + scale_color_brewer(palette="Paired") + 
+  labs(title = "Dataset 2")
+
+p1_q_n + p2_q_n + plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+```
+The higher the Qscore is - the less ambiguities there are in a read.
+
+## Generating a heatmap comparing the two data sets
+
+```{r}
+    hm1 <- ggplot(DS1, aes(x = N_number_factor, y = Qscore_range, 
+                           fill = Length)) + geom_tile() + 
+                            labs(title = "Dataset 1")
+    hm2 <- ggplot(DS2, aes(x = N_number_factor, y = Qscore_range, 
+                          fill = Length)) + geom_tile() + 
+                          labs(title = "Dataset 2")
+    hm1 + hm2 + plot_layout(guides = "collect") 
+```
+Length tends to positively correlate with Qscores and number of ambiguities
+
+# Challenge #2
+
+## Analyzing read length
+```{r}
+sample_char_list <- read_file("./seq_reads/SRR14149060.fasta") |> 
+    str_remove("^>") |> 
+    str_replace_all("\n", "") |> 
+    str_split(">") 
+  
+  sample_char_list <- sample_char_list[[1]] # Split function returns a layered 
+  # list, so access the data in the layer 1
+  
+  read <- str_extract(sample_char_list, '[ATGCN]*$')
+  
+  # Create a tibble 
+  breast_cancer_study <- tibble(
+  Seq_read = read
+)
+  
+  # Add a length column by calculating length of each read
+  breast_cancer_study <- breast_cancer_study |> 
+    mutate(Length = str_length(Seq_read))
+  
+  ggplot(breast_cancer_study, aes(x = Length)) + geom_histogram()
+```
+All the reads have a uniform length of 144 bp. They are human and target to 
+specific genes mutations in which causes breast cancer. blastn of 5 random reads
+returned APC, RAD51, CDH1, BRCA2 and ATM.
+
+## A concept for a rapid mapping of reads to the human genome to assess quality and distribution
+
+1. Remove adapter sequences from raw reads, perform a quality check and filter oout low quality reads.
+2. Obtain, decompress and index a reference genome
+3. Perform a paired end allignment of reads to reference.
+4. Obtain sequence alignment/map format (SAM) files
+5. Convert SAM files to BAM (binary form of the same data) for more efficient storage
+6. Perform variant calling and save results in VCF format
+7. Filter variants by depth, occurence frequency, perform statistical test on allele frequencies
+8. Check for PCR duplication issues and contamination
+
+Insights on file formats and how to work with them were obtained here:
+[https://speciationgenomics.github.io/readsExploration/](https://speciationgenomics.github.io/readsExploration/)
